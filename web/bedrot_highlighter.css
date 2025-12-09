@@ -1,0 +1,145 @@
+/**
+ * BEDROT Syntax Highlighter Styles
+ *
+ * Muted color scheme for easy-on-eyes editing
+ * Based on One Dark theme palette
+ *
+ * Uses sibling overlay pattern: backdrop is inserted as sibling
+ * and positioned absolutely to overlay the textarea.
+ * This preserves ComfyUI's control over textarea sizing.
+ */
+
+/* Backdrop for syntax highlighting - sibling element positioned over textarea */
+.bedrot-highlight-backdrop {
+    position: absolute;
+    pointer-events: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    box-sizing: border-box;
+    background: transparent;
+    color: #abb2bf; /* Default text color - soft grey */
+    z-index: 0;
+}
+
+/* Make textarea text invisible but caret visible */
+.bedrot-highlighted-textarea {
+    background: transparent !important;
+    color: transparent !important;
+    caret-color: #abb2bf !important;
+    position: relative !important;
+    z-index: 1 !important;
+    /* NOTE: Do NOT set width, height, or resize here -
+       let ComfyUI control the textarea size */
+}
+
+/* When highlighting is disabled, restore normal appearance */
+textarea:not(.bedrot-highlighted-textarea) {
+    color: inherit !important;
+    background: inherit !important;
+}
+
+/* ============================================
+   SYNTAX HIGHLIGHTING COLORS
+   Muted/Soft palette - easy on eyes
+   ============================================ */
+
+/* --- Parentheses (CLIP weighting syntax) --- */
+.bedrot-paren-open,
+.bedrot-paren-close {
+    color: #d19a66; /* Muted orange */
+    font-weight: bold;
+}
+
+.bedrot-paren-content {
+    color: #abb2bf; /* Default text */
+}
+
+.bedrot-paren-weight {
+    color: #e5c07b; /* Soft gold */
+    font-weight: bold;
+}
+
+/* --- Curly braces (random choice blocks) --- */
+.bedrot-curly-open,
+.bedrot-curly-close {
+    color: #56b6c2; /* Muted teal */
+    font-weight: bold;
+}
+
+.bedrot-curly-pipe {
+    color: #56b6c2; /* Muted teal */
+    font-weight: bold;
+}
+
+/* --- Square brackets (BEDROT conditional language) --- */
+
+/* Flag tokens [N] - distinct marker style */
+.bedrot-flag-token {
+    color: #98c379; /* Soft green */
+    font-weight: bold;
+}
+
+/* Positive conditional directive [K: */
+.bedrot-cond-pos-dir {
+    color: #61afef; /* Muted blue */
+    font-weight: bold;
+}
+
+/* Negative conditional directive [-K: */
+.bedrot-cond-neg-dir {
+    color: #c678dd; /* Soft purple */
+    font-weight: bold;
+}
+
+/* Closing bracket for conditionals */
+.bedrot-cond-close {
+    color: #61afef; /* Muted blue */
+    font-weight: bold;
+}
+
+/* ============================================
+   WARNING AND ERROR STATES
+   ============================================ */
+
+/* Invalid bare negative tokens [-N] */
+.bedrot-invalid-token {
+    color: #e06c75; /* Muted red */
+    text-decoration: underline wavy;
+    text-decoration-color: #e06c75;
+}
+
+/* Unbalanced brackets */
+.bedrot-unbalanced {
+    color: #e06c75; /* Muted red */
+    background: rgba(224, 108, 117, 0.2);
+    text-decoration: underline wavy;
+    text-decoration-color: #e06c75;
+}
+
+/* Orphan flag - [N] with no matching [N: ...] conditional */
+.bedrot-orphan-flag {
+    color: #5c6370 !important; /* Dim grey */
+    font-style: italic;
+}
+
+/* Unused conditional - [K: ...] where K is never activated by a flag */
+.bedrot-unused-cond {
+    color: #5c6370 !important; /* Dim grey */
+    font-style: italic;
+}
+
+/* Nested conditional warning - [K: ... [M: ...] ...] */
+.bedrot-nested-warning {
+    background: rgba(229, 192, 123, 0.15); /* Soft amber tint */
+    border-bottom: 1px dashed #e5c07b;
+}
+
+/* ============================================
+   GENERAL WARNING CLASS
+   ============================================ */
+
+.bedrot-warning {
+    background: rgba(229, 192, 123, 0.2); /* Soft amber background */
+}
