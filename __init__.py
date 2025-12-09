@@ -2,7 +2,13 @@
 BEDROT Custom Nodes for ComfyUI
 """
 
-from .bedrot_cliptextencoder import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+from .bedrot_cliptextencoder import NODE_CLASS_MAPPINGS as ENCODER_MAPPINGS
+from .bedrot_cliptextencoder import NODE_DISPLAY_NAME_MAPPINGS as ENCODER_DISPLAY
+from .bedrot_cliptextencoder_preview import NODE_CLASS_MAPPINGS as PREVIEW_MAPPINGS
+from .bedrot_cliptextencoder_preview import NODE_DISPLAY_NAME_MAPPINGS as PREVIEW_DISPLAY
+
+NODE_CLASS_MAPPINGS = {**ENCODER_MAPPINGS, **PREVIEW_MAPPINGS}
+NODE_DISPLAY_NAME_MAPPINGS = {**ENCODER_DISPLAY, **PREVIEW_DISPLAY}
 
 WEB_DIRECTORY = "./web"
 

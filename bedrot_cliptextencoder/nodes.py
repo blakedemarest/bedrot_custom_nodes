@@ -36,8 +36,12 @@ class BedrotCLIPTextEncode:
             }
         }
 
-    RETURN_TYPES = ("CONDITIONING",)
-    OUTPUT_TOOLTIPS = ("A conditioning containing the embedded text used to guide the diffusion model.",)
+    RETURN_TYPES = ("CONDITIONING", "STRING")
+    RETURN_NAMES = ("conditioning", "processed_text")
+    OUTPUT_TOOLTIPS = (
+        "A conditioning containing the embedded text used to guide the diffusion model.",
+        "The processed text after conditional bracket evaluation."
+    )
     FUNCTION = "encode"
     CATEGORY = "conditioning"
     DESCRIPTION = "Encodes text with conditional bracket preprocessing. Use [N] to set flags and [K: content] or [-K: content] for conditional content."
@@ -51,7 +55,7 @@ class BedrotCLIPTextEncode:
             text: Input text with optional [N] flags and [K: content] blocks
 
         Returns:
-            Tuple containing CONDITIONING tensor
+            Tuple containing (CONDITIONING tensor, processed text string)
         """
         if clip is None:
             raise RuntimeError(
@@ -65,7 +69,8 @@ class BedrotCLIPTextEncode:
 
         # Encode with standard CLIP logic
         tokens = clip.tokenize(processed_text)
-        return (clip.encode_from_tokens_scheduled(tokens),)
+        conditioning = clip.encode_from_tokens_scheduled(tokens)
+        return (conditioning, processed_text)
 
     def _preprocess_conditional_brackets(self, text):
         """
