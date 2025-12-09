@@ -346,7 +346,8 @@ class BedrotSyntaxHighlighter {
             }
 
             // Check for parentheses with optional weight (text:1.2)
-            const parenMatch = remaining.match(/^\(([^()]*?)(:\d+\.?\d*)?\)/);
+            // Exclude square brackets from content match so conditionals inside parens are tokenized separately
+            const parenMatch = remaining.match(/^\(([^()\[\]]*?)(:\d+\.?\d*)?\)/);
             if (parenMatch) {
                 const fullMatch = parenMatch[0];
                 const content = parenMatch[1] || '';
@@ -389,10 +390,11 @@ class BedrotSyntaxHighlighter {
                 continue;
             }
 
-            // Check for unmatched opening parenthesis
+            // Check for opening parenthesis (when simple pattern didn't match)
             if (text[pos] === '(') {
+                bracketStack.push({ type: 'paren', pos: pos });
                 tokens.push({
-                    type: TokenType.UNBALANCED,
+                    type: TokenType.PAREN_OPEN,
                     value: '(',
                     start: pos,
                     end: pos + 1,
@@ -402,14 +404,25 @@ class BedrotSyntaxHighlighter {
                 continue;
             }
 
-            // Check for unmatched closing parenthesis
+            // Check for closing parenthesis
             if (text[pos] === ')') {
-                tokens.push({
-                    type: TokenType.UNBALANCED,
-                    value: ')',
-                    start: pos,
-                    end: pos + 1,
-                });
+                const lastBracket = bracketStack.length > 0 ? bracketStack[bracketStack.length - 1] : null;
+                if (lastBracket && lastBracket.type === 'paren') {
+                    bracketStack.pop();
+                    tokens.push({
+                        type: TokenType.PAREN_CLOSE,
+                        value: ')',
+                        start: pos,
+                        end: pos + 1,
+                    });
+                } else {
+                    tokens.push({
+                        type: TokenType.UNBALANCED,
+                        value: ')',
+                        start: pos,
+                        end: pos + 1,
+                    });
+                }
                 pos++;
                 matched = true;
                 continue;
