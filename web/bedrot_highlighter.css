@@ -58,10 +58,10 @@ textarea:not(.bedrot-highlighted-textarea) {
    ============================================ */
 
 /* --- Parentheses (CLIP weighting syntax) --- */
+/* NOTE: font-weight: bold removed to prevent cursor/highlight misalignment */
 .bedrot-paren-open,
 .bedrot-paren-close {
     color: #d19a66; /* Muted orange */
-    font-weight: bold;
 }
 
 .bedrot-paren-content {
@@ -70,19 +70,16 @@ textarea:not(.bedrot-highlighted-textarea) {
 
 .bedrot-paren-weight {
     color: #e5c07b; /* Soft gold */
-    font-weight: bold;
 }
 
 /* --- Curly braces (random choice blocks) --- */
 .bedrot-curly-open,
 .bedrot-curly-close {
     color: #56b6c2; /* Muted teal */
-    font-weight: bold;
 }
 
 .bedrot-curly-pipe {
     color: #56b6c2; /* Muted teal */
-    font-weight: bold;
 }
 
 /* --- Square brackets (BEDROT conditional language) --- */
@@ -90,25 +87,21 @@ textarea:not(.bedrot-highlighted-textarea) {
 /* Flag tokens [N] - distinct marker style */
 .bedrot-flag-token {
     color: #98c379; /* Soft green */
-    font-weight: bold;
 }
 
 /* Positive conditional directive [K: */
 .bedrot-cond-pos-dir {
     color: #61afef; /* Muted blue */
-    font-weight: bold;
 }
 
 /* Negative conditional directive [-K: */
 .bedrot-cond-neg-dir {
     color: #c678dd; /* Soft purple */
-    font-weight: bold;
 }
 
 /* Closing bracket for conditionals */
 .bedrot-cond-close {
     color: #61afef; /* Muted blue */
-    font-weight: bold;
 }
 
 /* ============================================
