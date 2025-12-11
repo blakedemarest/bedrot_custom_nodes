@@ -143,6 +143,7 @@ class BedrotSyntaxHighlighter {
     /**
      * Sync size of backdrop to textarea
      * Backdrop is absolutely positioned as sibling, overlays textarea exactly
+     * CRITICAL: Must match ALL font rendering properties for cursor alignment
      */
     syncSize() {
         if (!this.backdrop || !this.textarea) return;
@@ -173,6 +174,25 @@ class BedrotSyntaxHighlighter {
         this.backdrop.style.borderWidth = computed.borderWidth;
         this.backdrop.style.borderStyle = 'solid';
         this.backdrop.style.borderColor = 'transparent';
+
+        // CRITICAL: Match ALL font rendering properties for cursor alignment
+        // These ensure the backdrop renders text identically to the textarea
+        this.backdrop.style.fontWeight = computed.fontWeight;
+        this.backdrop.style.fontStyle = computed.fontStyle;
+        this.backdrop.style.fontVariant = computed.fontVariant;
+        this.backdrop.style.fontStretch = computed.fontStretch;
+        this.backdrop.style.fontFeatureSettings = computed.fontFeatureSettings;
+        this.backdrop.style.fontKerning = computed.fontKerning;
+        this.backdrop.style.fontVariantLigatures = computed.fontVariantLigatures;
+        this.backdrop.style.textRendering = computed.textRendering;
+        this.backdrop.style.textTransform = computed.textTransform;
+        this.backdrop.style.textIndent = computed.textIndent;
+        this.backdrop.style.tabSize = computed.tabSize;
+        this.backdrop.style.hyphens = computed.hyphens;
+        // Webkit-specific font smoothing
+        this.backdrop.style.webkitFontSmoothing = computed.webkitFontSmoothing;
+        // Firefox-specific font smoothing
+        this.backdrop.style.MozOsxFontSmoothing = computed.MozOsxFontSmoothing;
     }
 
     /**
