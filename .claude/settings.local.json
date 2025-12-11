@@ -3,6 +3,10 @@
     "allow": [
       "Bash(grep:*)",
       "Bash(find:*)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Earth\\CSU Fullerton Dropbox\\Blake Demarest\\favs\\SETS",
+      "E:\\PROGRAMS\\ComfyUI_windows_portable"
     ]
   }
 }
