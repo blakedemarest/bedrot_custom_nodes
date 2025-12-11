@@ -34,6 +34,18 @@
        let ComfyUI control the textarea size */
 }
 
+/* Make text selection visible even with transparent text */
+.bedrot-highlighted-textarea::selection {
+    background: rgba(97, 175, 239, 0.4); /* One Dark blue selection */
+    color: transparent; /* Keep text transparent so backdrop colors show */
+}
+
+/* Firefox-specific selection pseudo-element */
+.bedrot-highlighted-textarea::-moz-selection {
+    background: rgba(97, 175, 239, 0.4);
+    color: transparent;
+}
+
 /* When highlighting is disabled, restore normal appearance */
 textarea:not(.bedrot-highlighted-textarea) {
     color: inherit !important;

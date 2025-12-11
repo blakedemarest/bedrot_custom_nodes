@@ -100,6 +100,14 @@ class BedrotSyntaxHighlighter {
         // Update highlighting on input
         this.textarea.addEventListener("input", () => this.highlight());
 
+        // Immediate highlight on Enter for responsive feel (bypass debounce)
+        this.textarea.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                // Use setTimeout to run after the Enter key inserts the newline
+                setTimeout(() => this._doHighlight(), 0);
+            }
+        });
+
         // Sync scroll positions
         this.textarea.addEventListener("scroll", () => this.syncScroll());
 
@@ -215,6 +223,9 @@ class BedrotSyntaxHighlighter {
         const html = this.tokensToHTML(tokens, validation);
         this.backdrop.innerHTML = html;
         this.syncScroll();
+
+        // Force scroll sync on next frame for multi-line changes (e.g., Enter key)
+        requestAnimationFrame(() => this.syncScroll());
     }
 
     /**
@@ -257,20 +268,6 @@ class BedrotSyntaxHighlighter {
                 continue;
             }
 
-            // Check for invalid bare negative token [-N]
-            const invalidNegMatch = remaining.match(/^\[-\d+\]/);
-            if (invalidNegMatch) {
-                tokens.push({
-                    type: TokenType.INVALID_TOKEN,
-                    value: invalidNegMatch[0],
-                    start: pos,
-                    end: pos + invalidNegMatch[0].length,
-                });
-                pos += invalidNegMatch[0].length;
-                matched = true;
-                continue;
-            }
-
             // Check for positive conditional block opening [K:
             const condPosMatch = remaining.match(/^\[(\d+):\s*/);
             if (condPosMatch) {
@@ -298,6 +295,8 @@ class BedrotSyntaxHighlighter {
             }
 
             // Check for negative conditional block opening [-K:
+            // IMPORTANT: This must come BEFORE invalid bare negative check
+            // so that [-1: text] is recognized as a conditional, not invalid
             const condNegMatch = remaining.match(/^\[(-\d+):\s*/);
             if (condNegMatch) {
                 const flagId = Math.abs(parseInt(condNegMatch[1]));
@@ -319,6 +318,21 @@ class BedrotSyntaxHighlighter {
                 });
                 pos += condNegMatch[0].length;
                 inConditional = true;
+                matched = true;
+                continue;
+            }
+
+            // Check for invalid bare negative token [-N] (no colon)
+            // This must come AFTER conditional checks so [-1: text] works
+            const invalidNegMatch = remaining.match(/^\[-\d+\]/);
+            if (invalidNegMatch) {
+                tokens.push({
+                    type: TokenType.INVALID_TOKEN,
+                    value: invalidNegMatch[0],
+                    start: pos,
+                    end: pos + invalidNegMatch[0].length,
+                });
+                pos += invalidNegMatch[0].length;
                 matched = true;
                 continue;
             }
@@ -347,7 +361,9 @@ class BedrotSyntaxHighlighter {
 
             // Check for parentheses with optional weight (text:1.2)
             // Exclude square brackets from content match so conditionals inside parens are tokenized separately
-            const parenMatch = remaining.match(/^\(([^()\[\]]*?)(:\d+\.?\d*)?\)/);
+            // Exclude curly braces and pipes from paren content so they tokenize separately
+            // This allows {a|b} inside (...) to be highlighted correctly
+            const parenMatch = remaining.match(/^\(([^()\[\]{}|]*?)(:\d+\.?\d*)?\)/);
             if (parenMatch) {
                 const fullMatch = parenMatch[0];
                 const content = parenMatch[1] || '';
