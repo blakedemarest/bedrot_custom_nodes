@@ -143,7 +143,15 @@ class BedrotCLIPTextEncode:
         # The integer can have optional + or - sign
         # Content is everything after the colon until the closing bracket
         block_pattern = r'\[([+-]?\d+):\s*(.*?)\]'
-        text = re.sub(block_pattern, evaluate_block, text)
+
+        # Process iteratively to handle nested conditional blocks
+        # Each pass resolves one level of nesting
+        max_iterations = 10  # Safety limit to prevent infinite loops
+        for _ in range(max_iterations):
+            new_text = re.sub(block_pattern, evaluate_block, text)
+            if new_text == text:
+                break  # No more changes, all brackets resolved
+            text = new_text
 
         # Step 5: Clean up whitespace
         # Collapse multiple spaces to single space
