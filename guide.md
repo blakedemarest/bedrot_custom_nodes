@@ -178,14 +178,15 @@ Remove `[1]` for quick drafts, add it back for final renders.
 All ComfyUI syntax works alongside conditional brackets:
 
 ```
-[1]
-(masterpiece:1.2), {1girl|1boy},
-[1: (detailed face:1.3), beautiful eyes],
-[-1: faceless, silhouette],
+(masterpiece:1.2), {1girl [1] | 1boy [2]},
+[1: (detailed face:1.3), long flowing hair, elegant dress]
+[2: (chiseled jaw:1.2), short hair, formal suit],
 embedding:my_style
 ```
 
-This combines weighting `()`, random choice `{}`, embeddings, and conditional blocks all in one prompt.
+This combines weighting `()`, random choice `{}` with flags, embeddings, and conditional blocks. The random pick determines both the subject AND all their matching attributes.
+
+See the **Dynamic Presets with Flags** section below for more advanced examples of this pattern.
 
 ---
 
@@ -202,6 +203,125 @@ character,
 - Flags 1 only: `character, hero, standing tall`
 - Flags 1 and 2: `character, hero wearing shiny armor, standing tall`
 - No flags: `character`
+
+---
+
+## Dynamic Presets with Flags
+
+This is where the conditional bracket system truly shines. By placing `[N]` flags **inside** dynamic prompt options `{A|B}`, you can create sophisticated preset systems where one random selection controls your entire prompt.
+
+### The Pattern
+
+```
+{option A [1] | option B [2] | option C [3]}
+```
+
+This randomly picks one option, which:
+1. Outputs the text (e.g., "option A")
+2. Activates the corresponding flag (e.g., flag 1)
+
+Then all your `[1: ...]`, `[2: ...]`, `[3: ...]` blocks respond accordingly.
+
+---
+
+### Theme Packages
+
+Build complete aesthetic presets that stay coherent:
+
+```
+1girl, portrait, {cyberpunk [1] | fantasy [2] | steampunk [3]},
+[1: neon lights, rain, dark city, holographic jacket]
+[2: ethereal glow, magical forest, elven dress]
+[3: brass gears, Victorian era, corset and goggles]
+```
+
+**Possible outputs:**
+- `1girl, portrait, cyberpunk, neon lights, rain, dark city, holographic jacket`
+- `1girl, portrait, fantasy, ethereal glow, magical forest, elven dress`
+- `1girl, portrait, steampunk, brass gears, Victorian era, corset and goggles`
+
+No more mismatched aesthetics - each theme brings its full package.
+
+---
+
+### Character Classes
+
+Define archetypes where class determines everything:
+
+```
+{a warrior [1] | a mage [2] | a rogue [3]},
+[1: battle-scarred face, stern expression]
+[2: wise eyes, mystical glow]
+[3: cunning smile, shadowed features],
+wearing [1: plate armor, wielding greatsword]
+[2: flowing robes, ornate staff]
+[3: leather armor, twin daggers],
+standing in [1: a war-torn battlefield]
+[2: an ancient arcane library]
+[3: a moonlit back alley]
+```
+
+One random pick builds a complete character with matching appearance, gear, and setting.
+
+---
+
+### Time of Day
+
+Coherent lighting and atmosphere:
+
+```
+landscape photo, {morning [1] | golden hour [2] | night [3]},
+[1: soft diffused light, misty, dew on grass, birds in sky]
+[2: warm orange tones, long shadows, sun on horizon]
+[3: moonlight, stars visible, cool blue tones, quiet mood]
+```
+
+---
+
+### Subject with Matching Props
+
+Ensure subjects always get appropriate items:
+
+```
+{a black cat [1] | a golden retriever [2]},
+playing with [1: a ball of yarn][-1: a tennis ball],
+resting on [1: a velvet cushion][-1: a grass lawn]
+```
+
+**Outputs:**
+- `a black cat, playing with a ball of yarn, resting on a velvet cushion`
+- `a golden retriever, playing with a tennis ball, resting on a grass lawn`
+
+The negative blocks `[-1: ...]` provide the alternative when flag 1 is NOT active.
+
+---
+
+### Weighted Rarity
+
+Control the odds by repeating options:
+
+```
+character with {common [1] | common [1] | common [1] | rare [2]} hair,
+[1: brown, shoulder-length]
+[2: rainbow gradient, flowing dramatically]
+```
+
+This gives 75% chance of common hair, 25% chance of rare. Duplicate the options to weight your randomness.
+
+---
+
+### Role Swapping
+
+Flip character roles while keeping both present:
+
+```
+two figures facing off,
+{hero vs villain [1] | twist ending [2]},
+[1: the knight stands victorious][-1: the knight lies defeated],
+[1: the dragon retreats wounded][-1: the dragon looms triumphant]
+```
+
+One flag swap reverses the entire narrative.
 
 ---
 
