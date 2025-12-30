@@ -42,6 +42,7 @@ const TokenType = {
     WARNING: "warning",
     ORPHAN_FLAG: "orphan-flag",
     UNUSED_COND: "unused-cond",
+    TAG_BYPASS: "tag-bypass",           // The --- marker and bypassed content
 };
 
 /**
@@ -269,6 +270,58 @@ class BedrotSyntaxHighlighter {
         while (pos < text.length) {
             let matched = false;
             const remaining = text.substring(pos);
+
+            // Check for --- tag bypass pattern (must come first)
+            if (remaining.startsWith('---')) {
+                const bracketMap = { '(': ')', '[': ']', '{': '}' };
+                let bypassEnd = pos + 3; // After ---
+
+                if (bypassEnd < text.length && text[bypassEnd] in bracketMap) {
+                    // Bracket-based bypass: ---(content), ---[content], ---{content}
+                    const openChar = text[bypassEnd];
+                    const closeChar = bracketMap[openChar];
+                    const matchEnd = this.findMatchingBracket(text, bypassEnd + 1, openChar, closeChar);
+
+                    if (matchEnd !== -1) {
+                        // Found matching bracket - include everything
+                        const fullBypass = text.substring(pos, matchEnd + 1);
+                        tokens.push({
+                            type: TokenType.TAG_BYPASS,
+                            value: fullBypass,
+                            start: pos,
+                            end: matchEnd + 1,
+                        });
+                        pos = matchEnd + 1;
+                    } else {
+                        // Unbalanced - mark rest as bypass (will be removed)
+                        const fullBypass = text.substring(pos);
+                        tokens.push({
+                            type: TokenType.TAG_BYPASS,
+                            value: fullBypass,
+                            start: pos,
+                            end: text.length,
+                            unbalanced: true,
+                        });
+                        pos = text.length;
+                    }
+                } else {
+                    // Simple bypass: ---tag until comma
+                    let endPos = bypassEnd;
+                    while (endPos < text.length && text[endPos] !== ',') {
+                        endPos++;
+                    }
+                    const fullBypass = text.substring(pos, endPos);
+                    tokens.push({
+                        type: TokenType.TAG_BYPASS,
+                        value: fullBypass,
+                        start: pos,
+                        end: endPos,
+                    });
+                    pos = endPos;
+                }
+                matched = true;
+                continue;
+            }
 
             // Check for flag token [N] (positive integer, no colon)
             const flagMatch = remaining.match(/^\[(\d+)\]/);
@@ -629,6 +682,41 @@ class BedrotSyntaxHighlighter {
             .replace(/"/g, "&quot;")
             .replace(/ /g, " ") // Keep spaces as-is for pre-wrap
             .replace(/\n/g, "\n"); // Keep newlines for pre-wrap
+    }
+
+    /**
+     * Find matching closing bracket position, respecting nesting.
+     * Used for bracket-aware --- bypass detection.
+     *
+     * @param {string} text - Text to search in
+     * @param {number} startPos - Position after the opening bracket
+     * @param {string} openChar - Opening bracket character
+     * @param {string} closeChar - Closing bracket character
+     * @returns {number} Position of matching close bracket, or -1 if not found
+     */
+    findMatchingBracket(text, startPos, openChar, closeChar) {
+        const bracketPairs = { '(': ')', '[': ']', '{': '}' };
+        let depth = 1;
+        let pos = startPos;
+
+        while (pos < text.length && depth > 0) {
+            const char = text[pos];
+            if (char === closeChar) {
+                depth--;
+            } else if (char === openChar) {
+                depth++;
+            } else if (char in bracketPairs && char !== openChar) {
+                // Different bracket type - find its matching close to skip over it
+                const innerClose = bracketPairs[char];
+                const innerEnd = this.findMatchingBracket(text, pos + 1, char, innerClose);
+                if (innerEnd !== -1) {
+                    pos = innerEnd;
+                }
+            }
+            pos++;
+        }
+
+        return depth === 0 ? pos - 1 : -1;
     }
 
     /**
