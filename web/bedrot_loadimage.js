@@ -247,6 +247,15 @@ app.registerExtension({
                             alert("Failed to open folder browser");
                         }
                     });
+
+                    // Remove the filter list widget that ComfyUI auto-adds for combo control
+                    const filterWidget = node.widgets?.find(w => w.name === "control_filter_list");
+                    if (filterWidget) {
+                        const filterIndex = node.widgets.indexOf(filterWidget);
+                        if (filterIndex > -1) {
+                            node.widgets.splice(filterIndex, 1);
+                        }
+                    }
                 }
             }, 100);
         };
@@ -374,6 +383,15 @@ app.registerExtension({
                         app.graph.setDirtyCanvas(true, false);
                     };
                     img.src = previewUrl;
+                }
+
+                // Remove the filter list widget that ComfyUI auto-adds for combo control
+                const filterWidget = node.widgets?.find(w => w.name === "control_filter_list");
+                if (filterWidget) {
+                    const filterIndex = node.widgets.indexOf(filterWidget);
+                    if (filterIndex > -1) {
+                        node.widgets.splice(filterIndex, 1);
+                    }
                 }
             }
         }, 200);

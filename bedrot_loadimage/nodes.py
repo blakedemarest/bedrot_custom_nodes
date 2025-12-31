@@ -133,7 +133,8 @@ class BedrotLoadImage:
                 }),
                 "image": (images, {
                     "image_upload": True,
-                    "tooltip": "Select an image from the current group. Drag-drop to upload."
+                    "tooltip": "Select an image from the current group. Drag-drop to upload.",
+                    "control_after_generate": True
                 }),
             },
         }
