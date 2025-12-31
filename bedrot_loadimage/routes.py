@@ -779,3 +779,52 @@ async def browse_for_folder(request):
         })
     else:
         return web.json_response({"error": message}, status=400)
+
+
+@PromptServer.instance.routes.get("/bedrot/view")
+async def bedrot_view_image(request):
+    """Serve image from any group (local or linked) for preview."""
+    import mimetypes
+
+    group = request.query.get("group", DEFAULT_GROUP)
+    filename = request.query.get("filename", "")
+
+    if not filename or filename == "[no images]":
+        return web.Response(status=400, text="No filename provided")
+
+    # Resolve group path (handles both local and linked)
+    group_path, is_linked, validation_base = _resolve_group_path(group)
+
+    if group_path is None:
+        # Try as local group
+        try:
+            sanitized = _sanitize_path(group)
+            base_path = _get_base_path()
+            group_path = os.path.join(base_path, sanitized)
+            validation_base = base_path
+        except ValueError as e:
+            return web.Response(status=400, text=str(e))
+
+    # Sanitize filename
+    try:
+        safe_filename = _sanitize_path(filename)
+    except ValueError as e:
+        return web.Response(status=400, text=str(e))
+
+    # Build full path
+    image_path = os.path.join(group_path, safe_filename)
+
+    # Security check - path must stay within group folder
+    if not _validate_path_within_base(image_path, group_path):
+        return web.Response(status=403, text="Access denied")
+
+    if not os.path.exists(image_path):
+        return web.Response(status=404, text="Image not found")
+
+    # Determine MIME type
+    mime_type, _ = mimetypes.guess_type(image_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    # Serve the file
+    return web.FileResponse(image_path, headers={"Content-Type": mime_type})

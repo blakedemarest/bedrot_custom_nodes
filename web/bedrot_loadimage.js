@@ -4,12 +4,23 @@ import { api } from "../../scripts/api.js";
 /**
  * BEDROT Load Image - Frontend Extension
  *
- * Provides dynamic group/image list refresh and custom upload routing.
+ * Provides dynamic group/image list refresh, custom upload routing,
+ * and image preview functionality.
  */
 
 // Constants matching backend
 const BASE_FOLDER = "BedRot_custom_image_load";
 const DEFAULT_GROUP = "Unsorted";
+
+/**
+ * Build the preview URL for an image in a group
+ */
+function buildPreviewUrl(group, filename) {
+    if (!filename || filename === "[no images]") {
+        return null;
+    }
+    return `/bedrot/view?group=${encodeURIComponent(group)}&filename=${encodeURIComponent(filename)}`;
+}
 
 /**
  * Fetch available groups from the API
@@ -113,7 +124,57 @@ app.registerExtension({
                 const imageWidget = node.widgets?.find(w => w.name === "image");
 
                 if (groupWidget && imageWidget) {
-                    // Store original callback
+                    // Store current group getter for preview URL construction
+                    node.bedrotGetCurrentGroup = () => groupWidget.value || DEFAULT_GROUP;
+
+                    // Function to update image preview
+                    const updateImagePreview = () => {
+                        const group = groupWidget.value || DEFAULT_GROUP;
+                        const filename = imageWidget.value;
+                        const previewUrl = buildPreviewUrl(group, filename);
+
+                        // Update the widget's image preview if it exists
+                        if (imageWidget.inputEl && imageWidget.inputEl.previousSibling) {
+                            const img = imageWidget.inputEl.previousSibling;
+                            if (img.tagName === "IMG") {
+                                img.src = previewUrl || "";
+                            }
+                        }
+
+                        // Also try to update via ComfyUI's image widget system
+                        if (node.imgs && node.imgs.length > 0) {
+                            const img = new Image();
+                            img.onload = () => {
+                                node.imgs = [img];
+                                node.setSizeForImage?.();
+                                app.graph.setDirtyCanvas(true, false);
+                            };
+                            img.src = previewUrl;
+                        } else if (previewUrl) {
+                            // Initialize image preview
+                            const img = new Image();
+                            img.onload = () => {
+                                node.imgs = [img];
+                                node.imageIndex = 0;
+                                node.setSizeForImage?.();
+                                app.graph.setDirtyCanvas(true, false);
+                            };
+                            img.src = previewUrl;
+                        }
+                    };
+
+                    // Store original image callback
+                    const originalImageCallback = imageWidget.callback;
+
+                    // Override image widget callback to update preview
+                    imageWidget.callback = function(value) {
+                        if (originalImageCallback) {
+                            originalImageCallback.call(this, value);
+                        }
+                        updateImagePreview();
+                    };
+
+                    // Store original group callback
                     const originalCallback = groupWidget.callback;
 
                     // Override group widget callback to refresh images
@@ -127,9 +188,15 @@ app.registerExtension({
                         const images = await fetchImagesForGroup(value);
                         updateComboOptions(imageWidget, images);
 
+                        // Update preview for new selection
+                        updateImagePreview();
+
                         // Trigger graph update
                         app.graph.setDirtyCanvas(true, false);
                     };
+
+                    // Initial preview load
+                    updateImagePreview();
 
                     // Add refresh button functionality via context menu
                     node.bedrotRefreshGroups = async function() {
@@ -139,6 +206,9 @@ app.registerExtension({
                         // Also refresh images for current group
                         const images = await fetchImagesForGroup(groupWidget.value);
                         updateComboOptions(imageWidget, images);
+
+                        // Update preview
+                        updateImagePreview();
 
                         app.graph.setDirtyCanvas(true, false);
                     };
@@ -164,6 +234,9 @@ app.registerExtension({
                                 // Refresh images for the new group
                                 const images = await fetchImagesForGroup(result.name);
                                 updateComboOptions(imageWidget, images);
+
+                                // Update preview for the new group
+                                updateImagePreview();
 
                                 app.graph.setDirtyCanvas(true, false);
                             } else if (result.error) {
@@ -244,7 +317,20 @@ app.registerExtension({
                         imageWidget.value = result.name;
                     }
 
-                    app.graph.setDirtyCanvas(true, false);
+                    // Update preview with the uploaded image
+                    const previewUrl = buildPreviewUrl(group, result.name);
+                    if (previewUrl) {
+                        const img = new Image();
+                        img.onload = () => {
+                            node.imgs = [img];
+                            node.imageIndex = 0;
+                            node.setSizeForImage?.();
+                            app.graph.setDirtyCanvas(true, false);
+                        };
+                        img.src = previewUrl;
+                    } else {
+                        app.graph.setDirtyCanvas(true, false);
+                    }
                 }
             }
 
@@ -272,6 +358,22 @@ app.registerExtension({
                 if (groupWidget.value) {
                     const images = await fetchImagesForGroup(groupWidget.value);
                     updateComboOptions(imageWidget, images);
+                }
+
+                // Load image preview
+                const group = groupWidget.value || DEFAULT_GROUP;
+                const filename = imageWidget.value;
+                const previewUrl = buildPreviewUrl(group, filename);
+
+                if (previewUrl) {
+                    const img = new Image();
+                    img.onload = () => {
+                        node.imgs = [img];
+                        node.imageIndex = 0;
+                        node.setSizeForImage?.();
+                        app.graph.setDirtyCanvas(true, false);
+                    };
+                    img.src = previewUrl;
                 }
             }
         }, 200);
