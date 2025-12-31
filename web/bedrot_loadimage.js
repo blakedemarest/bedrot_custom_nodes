@@ -142,6 +142,38 @@ app.registerExtension({
 
                         app.graph.setDirtyCanvas(true, false);
                     };
+
+                    // Add "Add Group" button
+                    node.addWidget("button", "Add Group", null, async () => {
+                        try {
+                            const response = await api.fetchApi("/bedrot/browse/folder", {
+                                method: "POST"
+                            });
+                            const result = await response.json();
+
+                            if (result.cancelled) {
+                                return; // User cancelled the dialog
+                            }
+
+                            if (result.success) {
+                                // Refresh groups and select the new one
+                                const groups = await fetchGroups();
+                                updateComboOptions(groupWidget, groups);
+                                groupWidget.value = result.name;
+
+                                // Refresh images for the new group
+                                const images = await fetchImagesForGroup(result.name);
+                                updateComboOptions(imageWidget, images);
+
+                                app.graph.setDirtyCanvas(true, false);
+                            } else if (result.error) {
+                                alert("Error adding group: " + result.error);
+                            }
+                        } catch (error) {
+                            console.error("BEDROT LoadImage: Browse folder error", error);
+                            alert("Failed to open folder browser");
+                        }
+                    });
                 }
             }, 100);
         };

@@ -14,6 +14,12 @@ from PIL import Image, ImageOps, ImageSequence
 import folder_paths
 import node_helpers
 
+from .config import (
+    load_linked_folders,
+    get_linked_folder_path,
+    is_linked_folder
+)
+
 # Constants - must match routes.py
 BASE_FOLDER = "BedRot_custom_image_load"
 DEFAULT_GROUP = "Unsorted"
@@ -32,17 +38,47 @@ def _ensure_base_structure():
     return base_path
 
 
+def _resolve_group_path(group):
+    """
+    Resolve a group name to its absolute filesystem path.
+
+    Args:
+        group: Group name (could be local or linked)
+
+    Returns:
+        tuple: (path: str, is_linked: bool) or (None, False) if invalid
+    """
+    if is_linked_folder(group):
+        path = get_linked_folder_path(group)
+        if path and os.path.isdir(path):
+            return path, True
+        return None, False
+    else:
+        base_path = _get_base_path()
+        path = os.path.join(base_path, group)
+        return path, False
+
+
 def _get_groups():
-    """Get list of available groups (subdirectories)."""
+    """Get list of available groups (local subdirectories + linked folders)."""
     base_path = _ensure_base_structure()
 
     groups = []
+
+    # Local groups (subdirectories)
     try:
         for entry in os.scandir(base_path):
             if entry.is_dir():
                 groups.append(entry.name)
     except OSError:
         pass
+
+    # Linked folders (from config)
+    linked_folders = load_linked_folders()
+    for folder in linked_folders:
+        # Only add if path still exists
+        if os.path.isdir(folder["path"]):
+            groups.append(folder["name"])
 
     # Sort groups, but keep Unsorted first
     groups.sort(key=lambda g: (g != DEFAULT_GROUP, g.lower()))
@@ -55,11 +91,10 @@ def _get_groups():
 
 
 def _get_images_in_group(group):
-    """Get list of image files in a specific group."""
-    base_path = _get_base_path()
-    group_path = os.path.join(base_path, group)
+    """Get list of image files in a specific group (local or linked)."""
+    group_path, _ = _resolve_group_path(group)
 
-    if not os.path.exists(group_path):
+    if not group_path or not os.path.exists(group_path):
         return ["[no images]"]
 
     files = [f for f in os.listdir(group_path)
@@ -101,12 +136,6 @@ class BedrotLoadImage:
                     "tooltip": "Select an image from the current group. Drag-drop to upload."
                 }),
             },
-            "optional": {
-                "new_group_name": ("STRING", {
-                    "default": "",
-                    "tooltip": "Create a new group. Leave empty to skip."
-                }),
-            }
         }
 
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
@@ -114,17 +143,8 @@ class BedrotLoadImage:
     FUNCTION = "load_image"
     CATEGORY = "BEDROT/image"
 
-    def load_image(self, group, image, new_group_name=""):
-        """
-        Load an image from the specified group.
-
-        If new_group_name is provided, creates the group first.
-        """
-        # Create new group if specified
-        if new_group_name and new_group_name.strip():
-            new_group_path = os.path.join(_get_base_path(), new_group_name.strip())
-            os.makedirs(new_group_path, exist_ok=True)
-
+    def load_image(self, group, image):
+        """Load an image from the specified group."""
         # Handle placeholder
         if image == "[no images]":
             # Return empty tensors
@@ -132,12 +152,18 @@ class BedrotLoadImage:
             empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
             return (empty_image, empty_mask, "")
 
-        # Build the full path
-        base_path = _get_base_path()
-        image_path = os.path.join(base_path, group, image)
+        # Resolve group to absolute path
+        group_path, is_linked = _resolve_group_path(group)
+        if not group_path:
+            raise ValueError(f"Invalid group: {group}")
 
-        # Validate path is within base
-        if os.path.commonpath([os.path.abspath(image_path), os.path.abspath(base_path)]) != os.path.abspath(base_path):
+        image_path = os.path.join(group_path, image)
+
+        # Validate path stays within group folder (for both local and linked)
+        try:
+            if os.path.commonpath([os.path.abspath(image_path), os.path.abspath(group_path)]) != os.path.abspath(group_path):
+                raise ValueError(f"Invalid image path: {image}")
+        except ValueError:
             raise ValueError(f"Invalid image path: {image}")
 
         if not os.path.exists(image_path):
@@ -192,13 +218,16 @@ class BedrotLoadImage:
         return (output_image, output_mask, image)
 
     @classmethod
-    def IS_CHANGED(cls, group, image, new_group_name=""):
+    def IS_CHANGED(cls, group, image):
         """Return hash of file content for cache invalidation."""
         if image == "[no images]":
             return ""
 
-        base_path = _get_base_path()
-        image_path = os.path.join(base_path, group, image)
+        group_path, _ = _resolve_group_path(group)
+        if not group_path:
+            return ""
+
+        image_path = os.path.join(group_path, image)
 
         if not os.path.exists(image_path):
             return ""
@@ -209,17 +238,20 @@ class BedrotLoadImage:
         return m.digest().hex()
 
     @classmethod
-    def VALIDATE_INPUTS(cls, group, image, new_group_name=""):
+    def VALIDATE_INPUTS(cls, group, image):
         """Validate that the image file exists."""
         if image == "[no images]":
             return True
 
-        base_path = _get_base_path()
-        image_path = os.path.join(base_path, group, image)
+        group_path, _ = _resolve_group_path(group)
+        if not group_path:
+            return f"Invalid group: {group}"
 
-        # Security check
+        image_path = os.path.join(group_path, image)
+
+        # Security check - path must stay within group folder
         try:
-            if os.path.commonpath([os.path.abspath(image_path), os.path.abspath(base_path)]) != os.path.abspath(base_path):
+            if os.path.commonpath([os.path.abspath(image_path), os.path.abspath(group_path)]) != os.path.abspath(group_path):
                 return f"Invalid image path: {image}"
         except ValueError:
             return f"Invalid image path: {image}"
