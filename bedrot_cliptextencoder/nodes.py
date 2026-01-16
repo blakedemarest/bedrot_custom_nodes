@@ -411,6 +411,8 @@ class BedrotCLIPTextEncode:
         text = re.sub(r',(\s*,)+', ',', text)
         # Remove leading commas
         text = re.sub(r'^\s*,\s*', '', text)
+        # Remove trailing commas
+        text = re.sub(r',\s*$', '', text)
         # Trim leading and trailing whitespace
         text = text.strip()
 
