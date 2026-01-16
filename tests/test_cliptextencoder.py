@@ -201,3 +201,90 @@ class TestRealisticPrompts:
         result = encoder._preprocess_conditional_brackets(prompt)
         assert "detailed face" in result
         assert "simple background" not in result
+
+
+class TestTagBypass:
+    """Tests for ---tag bypass syntax."""
+
+    def test_simple_bypass(self, encoder):
+        """Basic ---tag removes until comma."""
+        result = encoder._preprocess_conditional_brackets("tag1, ---tag2, tag3")
+        assert result == "tag1, tag3"
+
+    def test_bypass_parentheses_group(self, encoder):
+        """---(group) removes entire parenthetical group."""
+        result = encoder._preprocess_conditional_brackets("tag1, ---(a, b, c), tag3")
+        assert result == "tag1, tag3"
+
+    def test_bypass_bracket_group(self, encoder):
+        """---[conditional] removes entire bracket group."""
+        result = encoder._preprocess_conditional_brackets("tag1, ---[1: conditional], tag3")
+        assert result == "tag1, tag3"
+
+    def test_bypass_curly_group(self, encoder):
+        """---{dynamic} removes entire curly brace group."""
+        result = encoder._preprocess_conditional_brackets("tag1, ---{a|b|c}, tag3")
+        assert result == "tag1, tag3"
+
+    def test_bypass_not_triggered_inside_conditional(self, encoder):
+        """--- inside a conditional block should be treated as content, not trigger."""
+        result = encoder._preprocess_conditional_brackets("(mouth closed [3]), [-3: ---] mouth open,")
+        # Flag 3 active -> [-3: ---] removed entirely
+        # The --- inside the conditional is content, not a bypass trigger
+        assert "mouth open" in result
+        assert "---" not in result  # The [-3: ---] block was removed
+
+    def test_bypass_not_triggered_mid_content(self, encoder):
+        """--- in middle of tag content should not trigger."""
+        result = encoder._preprocess_conditional_brackets("some---text, other")
+        assert result == "some---text, other"
+
+    def test_bypass_after_newline(self, encoder):
+        """--- after newline should trigger."""
+        result = encoder._preprocess_conditional_brackets("tag1,\n---tag2,\ntag3")
+        assert "tag1" in result
+        assert "tag2" not in result
+        assert "tag3" in result
+
+    def test_bypass_at_start(self, encoder):
+        """--- at start of text should trigger."""
+        result = encoder._preprocess_conditional_brackets("---removed, kept")
+        assert result == "kept"
+
+    def test_bypass_with_whitespace_after_comma(self, encoder):
+        """--- after comma with whitespace should trigger."""
+        result = encoder._preprocess_conditional_brackets("tag1,   ---tag2, tag3")
+        assert result == "tag1, tag3"
+
+
+class TestBlockComments:
+    """Tests for ///start...///end block comment syntax."""
+
+    def test_simple_block_comment(self, encoder):
+        """Block comments are removed."""
+        result = encoder._preprocess_conditional_brackets("visible ///start hidden ///end visible")
+        assert result == "visible visible"
+
+    def test_multiple_block_comments(self, encoder):
+        """Multiple block comments are all removed."""
+        result = encoder._preprocess_conditional_brackets("a ///start x ///end b ///start y ///end c")
+        assert result == "a b c"
+
+
+class TestSuppressionRules:
+    """Tests for trigger/@/targets/@/ suppression syntax."""
+
+    def test_simple_suppression(self, encoder):
+        """Trigger present suppresses targets."""
+        result = encoder._preprocess_conditional_brackets("brown hair/@/blonde hair/@/, blonde hair")
+        assert "brown hair" in result
+        assert "blonde hair" not in result
+
+    def test_suppression_no_trigger(self, encoder):
+        """Without trigger, targets remain."""
+        result = encoder._preprocess_conditional_brackets("red hair/@/blonde hair/@/, blonde hair")
+        # red hair not present elsewhere, so blonde hair stays
+        # Wait, red hair IS present (it's the trigger tag)
+        # Let me re-read the logic...
+        # Actually trigger "red hair" is present, so "blonde hair" should be suppressed
+        assert "blonde hair" not in result

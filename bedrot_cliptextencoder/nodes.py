@@ -82,6 +82,9 @@ class BedrotCLIPTextEncode:
         """
         Remove tags prefixed with --- with bracket-aware grouping.
 
+        IMPORTANT: --- only triggers at tag boundaries (start of text, after comma,
+        or after newline). This prevents --- inside other content from triggering.
+
         Syntax variants:
         - ---tag: Removes until next comma
         - ---(tag1, tag2): Removes entire parenthetical group
@@ -98,6 +101,9 @@ class BedrotCLIPTextEncode:
             Input:  "test, ---[1: conditional block], visible"
             Output: "test, visible"
 
+            Input:  "[-3: ---] mouth open" (--- inside conditional)
+            Output: "[-3: ---] mouth open" (unchanged - not at boundary)
+
         Args:
             text: Input text potentially containing ---tag patterns
 
@@ -111,6 +117,24 @@ class BedrotCLIPTextEncode:
         while i < len(text):
             # Check for --- pattern
             if text[i:i+3] == '---':
+                # Determine if we're at a tag boundary
+                at_boundary = False
+                if i == 0:
+                    at_boundary = True
+                else:
+                    # Look back to find if we're after comma or newline (skip whitespace)
+                    j = i - 1
+                    while j >= 0 and text[j] in ' \t':
+                        j -= 1
+                    if j < 0 or text[j] in ',\n\r':
+                        at_boundary = True
+
+                if not at_boundary:
+                    # Not at tag boundary - treat --- as regular content
+                    result.append(text[i])
+                    i += 1
+                    continue
+
                 i += 3  # Skip past ---
 
                 # Check if followed by an opening bracket
