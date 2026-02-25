@@ -2,70 +2,47 @@
 BEDROT Load Image - API Routes
 
 Custom endpoints for group-based image management.
+All groups are folder references stored in groups.json config.
 """
 
 from server import PromptServer
 from aiohttp import web
 import folder_paths
 import os
-import shutil
 import hashlib
 from urllib.parse import unquote
 
 from .config import (
-    load_linked_folders,
-    add_linked_folder,
-    remove_linked_folder,
-    get_linked_folder_path,
-    is_linked_folder
+    load_groups,
+    get_group_path,
+    add_group,
+    remove_group,
+    rename_group,
+    ensure_default_group,
+    DEFAULT_GROUP
 )
 
-# Constants
-BASE_FOLDER = "BedRot_custom_image_load"
-DEFAULT_GROUP = "Unsorted"
 
-
-def _get_base_path():
-    """Get the base path for BedRot image storage."""
-    return os.path.join(folder_paths.get_input_directory(), BASE_FOLDER)
-
-
-def _sanitize_path(name):
+def _sanitize_filename(name):
     """
-    Sanitize user-provided path component to prevent directory traversal.
+    Sanitize a filename to prevent directory traversal.
     Returns cleaned name or raises ValueError if invalid.
     """
     if not name or not isinstance(name, str):
-        raise ValueError("Invalid path: empty or not a string")
+        raise ValueError("Invalid filename: empty or not a string")
 
-    # Normalize and strip dangerous characters
-    clean = os.path.normpath(name).replace("\\", "/")
+    # Strip path separators and parent refs
+    clean = os.path.basename(name)
 
-    # Remove leading slashes and dots
-    clean = clean.lstrip("/").lstrip("\\")
-
-    # Reject if contains parent directory references or drive letters
-    if ".." in clean or ":" in clean or clean.startswith("/"):
-        raise ValueError("Invalid path: contains forbidden characters")
-
-    # Reject if empty after cleaning
-    if not clean or clean == ".":
-        raise ValueError("Invalid path: resolves to empty")
+    if not clean or clean == "." or clean == "..":
+        raise ValueError("Invalid filename")
 
     return clean
 
 
-def _ensure_base_structure():
-    """Ensure the base folder structure exists with default Unsorted group."""
-    base_path = _get_base_path()
-    unsorted_path = os.path.join(base_path, DEFAULT_GROUP)
-    os.makedirs(unsorted_path, exist_ok=True)
-    return base_path
-
-
 def _get_image_files(directory):
     """Get list of image files in a directory."""
-    if not os.path.exists(directory):
+    if not os.path.isdir(directory):
         return []
 
     files = [f for f in os.listdir(directory)
@@ -73,101 +50,95 @@ def _get_image_files(directory):
     return folder_paths.filter_files_content_types(files, ["image"])
 
 
-def _validate_path_within_base(target_path, base_path):
+def _validate_path_within(target_path, base_path):
     """Validate that target path is within the base path."""
     target_abs = os.path.abspath(target_path)
     base_abs = os.path.abspath(base_path)
     return os.path.commonpath([target_abs, base_abs]) == base_abs
 
 
-def _resolve_group_path(group):
-    """
-    Resolve a group name to its absolute filesystem path.
-
-    Args:
-        group: Group name (could be local or linked)
-
-    Returns:
-        tuple: (path: str, is_linked: bool, validation_base: str)
-               validation_base is the folder to validate paths against
-    """
-    if is_linked_folder(group):
-        path = get_linked_folder_path(group)
-        if path and os.path.isdir(path):
-            return path, True, path
-        return None, False, None
-    else:
-        base_path = _get_base_path()
-        path = os.path.join(base_path, group)
-        return path, False, base_path
+# Ensure default group exists on module import
+ensure_default_group()
 
 
-# Ensure base structure exists on module import
-_ensure_base_structure()
-
+# ============================================================================
+# Group Management Endpoints
+# ============================================================================
 
 @PromptServer.instance.routes.get("/bedrot/groups")
 async def list_groups(request):
-    """List all groups (local + linked) with image counts."""
-    base_path = _get_base_path()
-    _ensure_base_structure()
+    """List all groups with image counts."""
+    groups = load_groups()
+    result = []
 
-    groups = []
+    for group in groups:
+        path = group["path"]
+        exists = os.path.isdir(path)
+        count = len(_get_image_files(path)) if exists else 0
+        result.append({
+            "name": group["name"],
+            "count": count,
+            "exists": exists
+        })
 
-    # Local groups (subdirectories)
+    # Sort with Unsorted first
+    result.sort(key=lambda g: (g["name"] != DEFAULT_GROUP, g["name"].lower()))
+
+    return web.json_response(result)
+
+
+@PromptServer.instance.routes.post("/bedrot/group/rename")
+async def rename_group_endpoint(request):
+    """Rename a group (changes config entry, not filesystem folder)."""
     try:
-        for entry in os.scandir(base_path):
-            if entry.is_dir():
-                images = _get_image_files(entry.path)
-                groups.append({
-                    "name": entry.name,
-                    "count": len(images),
-                    "type": "local"
-                })
-    except OSError as e:
-        return web.json_response({"error": str(e)}, status=500)
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
 
-    # Linked folders
-    linked_folders = load_linked_folders()
-    for folder in linked_folders:
-        if os.path.isdir(folder["path"]):
-            images = _get_image_files(folder["path"])
-            groups.append({
-                "name": folder["name"],
-                "count": len(images),
-                "type": "linked",
-                "path": folder["path"]
-            })
+    old_name = data.get("old_name", "")
+    new_name = data.get("new_name", "")
 
-    # Sort groups, but keep Unsorted first
-    groups.sort(key=lambda g: (g["name"] != DEFAULT_GROUP, g["name"].lower()))
+    success, message = rename_group(old_name, new_name)
 
-    return web.json_response(groups)
+    if success:
+        return web.json_response({"success": True, "old_name": old_name, "new_name": new_name})
+    else:
+        return web.json_response({"error": message}, status=400)
 
+
+@PromptServer.instance.routes.post("/bedrot/group/delete")
+async def delete_group_endpoint(request):
+    """Remove a group from config (does not delete the folder on disk)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    name = data.get("name", "")
+
+    success, message = remove_group(name)
+
+    if success:
+        return web.json_response({"success": True, "name": name})
+    else:
+        return web.json_response({"error": message}, status=400)
+
+
+# ============================================================================
+# Image Management Endpoints
+# ============================================================================
 
 @PromptServer.instance.routes.get("/bedrot/images/{group}")
 async def list_images(request):
-    """List images in a specific group (local or linked)."""
+    """List images in a specific group."""
     group_raw = request.match_info.get("group", DEFAULT_GROUP)
     group = unquote(group_raw)
 
-    # Try to resolve as linked folder first
-    group_path, is_linked, validation_base = _resolve_group_path(group)
+    group_path = get_group_path(group)
+    if not group_path:
+        return web.json_response([])
 
-    if group_path is None:
-        # Not a linked folder, try as local group with sanitization
-        try:
-            sanitized = _sanitize_path(group)
-            base_path = _get_base_path()
-            group_path = os.path.join(base_path, sanitized)
-            validation_base = base_path
-        except ValueError as e:
-            return web.json_response({"error": str(e)}, status=400)
-
-    if not is_linked and not _validate_path_within_base(group_path, validation_base):
-        return web.json_response({"error": "Invalid group path"}, status=400)
-
-    if not os.path.exists(group_path):
+    if not os.path.isdir(group_path):
         return web.json_response([])
 
     images = _get_image_files(group_path)
@@ -177,8 +148,8 @@ async def list_images(request):
 
 
 @PromptServer.instance.routes.post("/bedrot/upload/image")
-async def bedrot_upload_image(request):
-    """Upload image to a specific group (local or linked)."""
+async def upload_image(request):
+    """Upload image to a specific group."""
     post = await request.post()
     image = post.get("image")
 
@@ -186,49 +157,32 @@ async def bedrot_upload_image(request):
         return web.json_response({"error": "No image provided"}, status=400)
 
     group = post.get("group", DEFAULT_GROUP)
+    group_path = get_group_path(group)
 
-    # Try to resolve as linked folder first
-    group_path, is_linked, validation_base = _resolve_group_path(group)
+    if not group_path:
+        return web.json_response({"error": f"Unknown group: {group}"}, status=400)
 
-    if group_path is None:
-        # Not a linked folder, try as local group
-        try:
-            sanitized = _sanitize_path(group)
-            base_path = _get_base_path()
-            group_path = os.path.join(base_path, sanitized)
-            validation_base = base_path
-            is_linked = False
-        except ValueError:
-            # Fall back to default group
-            base_path = _get_base_path()
-            group_path = os.path.join(base_path, DEFAULT_GROUP)
-            validation_base = base_path
-            is_linked = False
-            group = DEFAULT_GROUP
-
-    if not is_linked and not _validate_path_within_base(group_path, validation_base):
-        return web.json_response({"error": "Invalid group path"}, status=400)
-
-    # Create group folder if needed (local only - linked folders should exist)
-    if not is_linked:
-        os.makedirs(group_path, exist_ok=True)
-    elif not os.path.exists(group_path):
-        return web.json_response({"error": "Linked folder no longer exists"}, status=400)
+    if not os.path.isdir(group_path):
+        return web.json_response({"error": "Group folder no longer exists"}, status=400)
 
     filename = image.filename
     if not filename:
         return web.json_response({"error": "No filename provided"}, status=400)
 
+    try:
+        filename = _sanitize_filename(filename)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+
     filepath = os.path.join(group_path, filename)
 
-    if not _validate_path_within_base(filepath, group_path):
+    if not _validate_path_within(filepath, group_path):
         return web.json_response({"error": "Invalid file path"}, status=400)
 
-    # Handle duplicates - add number suffix if needed
+    # Handle duplicates -- check hash, add suffix if different file
     split = os.path.splitext(filename)
     i = 1
     while os.path.exists(filepath):
-        # Check if it's the same file by hash
         hasher_existing = hashlib.sha256()
         hasher_new = hashlib.sha256()
 
@@ -239,16 +193,12 @@ async def bedrot_upload_image(request):
         image.file.seek(0)
 
         if hasher_existing.hexdigest() == hasher_new.hexdigest():
-            # Same file, just return existing
-            subfolder = group if is_linked else f"{BASE_FOLDER}/{group}"
             return web.json_response({
                 "name": filename,
-                "subfolder": subfolder,
-                "type": "linked" if is_linked else "input",
+                "group": group,
                 "duplicate": True
             })
 
-        # Different file, increment suffix
         filename = f"{split[0]} ({i}){split[1]}"
         filepath = os.path.join(group_path, filename)
         i += 1
@@ -257,98 +207,15 @@ async def bedrot_upload_image(request):
     with open(filepath, "wb") as f:
         f.write(image.file.read())
 
-    subfolder = group if is_linked else f"{BASE_FOLDER}/{group}"
     return web.json_response({
         "name": filename,
-        "subfolder": subfolder,
-        "type": "linked" if is_linked else "input"
+        "group": group
     })
 
 
-@PromptServer.instance.routes.post("/bedrot/group/create")
-async def create_group(request):
-    """Create a new group folder."""
-    try:
-        data = await request.json()
-    except Exception:
-        return web.json_response({"error": "Invalid JSON"}, status=400)
-
-    try:
-        name = _sanitize_path(data.get("name", ""))
-    except ValueError as e:
-        return web.json_response({"error": str(e)}, status=400)
-
-    base_path = _get_base_path()
-    group_path = os.path.join(base_path, name)
-
-    if not _validate_path_within_base(group_path, base_path):
-        return web.json_response({"error": "Invalid group path"}, status=400)
-
-    if os.path.exists(group_path):
-        return web.json_response({"error": "Group already exists"}, status=409)
-
-    try:
-        os.makedirs(group_path)
-    except OSError as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-    return web.json_response({"success": True, "name": name})
-
-
-@PromptServer.instance.routes.post("/bedrot/group/rename")
-async def rename_group(request):
-    """Rename a local group folder (not linked folders)."""
-    try:
-        data = await request.json()
-    except Exception:
-        return web.json_response({"error": "Invalid JSON"}, status=400)
-
-    old_name = data.get("old_name", "")
-    new_name = data.get("new_name", "")
-
-    # Prevent renaming linked folders
-    if is_linked_folder(old_name):
-        return web.json_response({
-            "error": "Cannot rename linked folders. Use unlink and re-link with a new name."
-        }, status=400)
-
-    try:
-        old_name = _sanitize_path(old_name)
-        new_name = _sanitize_path(new_name)
-    except ValueError as e:
-        return web.json_response({"error": str(e)}, status=400)
-
-    # Prevent renaming the default Unsorted group
-    if old_name == DEFAULT_GROUP:
-        return web.json_response({"error": "Cannot rename the Unsorted group"}, status=400)
-
-    base_path = _get_base_path()
-    old_path = os.path.join(base_path, old_name)
-    new_path = os.path.join(base_path, new_name)
-
-    if not _validate_path_within_base(old_path, base_path):
-        return web.json_response({"error": "Invalid source path"}, status=400)
-
-    if not _validate_path_within_base(new_path, base_path):
-        return web.json_response({"error": "Invalid destination path"}, status=400)
-
-    if not os.path.exists(old_path):
-        return web.json_response({"error": "Source group does not exist"}, status=404)
-
-    if os.path.exists(new_path):
-        return web.json_response({"error": "Destination group already exists"}, status=409)
-
-    try:
-        os.rename(old_path, new_path)
-    except OSError as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-    return web.json_response({"success": True, "old_name": old_name, "new_name": new_name})
-
-
 @PromptServer.instance.routes.post("/bedrot/image/copy")
-async def copy_image_to_group(request):
-    """Copy an image from one group to another (supports linked folders)."""
+async def copy_image(request):
+    """Copy an image from one group to another."""
     try:
         data = await request.json()
     except Exception:
@@ -358,67 +225,43 @@ async def copy_image_to_group(request):
     src_group = data.get("from_group", "")
     dst_group = data.get("to_group", "")
 
-    # Sanitize image name
     try:
-        image_name = _sanitize_path(image_name)
+        image_name = _sanitize_filename(image_name)
     except ValueError as e:
         return web.json_response({"error": str(e)}, status=400)
 
-    # Resolve source group
-    src_group_path, src_linked, src_base = _resolve_group_path(src_group)
-    if src_group_path is None:
-        try:
-            sanitized = _sanitize_path(src_group)
-            base_path = _get_base_path()
-            src_group_path = os.path.join(base_path, sanitized)
-            src_base = base_path
-        except ValueError as e:
-            return web.json_response({"error": f"Invalid source: {e}"}, status=400)
+    src_path = get_group_path(src_group)
+    dst_path = get_group_path(dst_group)
 
-    # Resolve destination group
-    dst_group_path, dst_linked, dst_base = _resolve_group_path(dst_group)
-    if dst_group_path is None:
-        try:
-            sanitized = _sanitize_path(dst_group)
-            base_path = _get_base_path()
-            dst_group_path = os.path.join(base_path, sanitized)
-            dst_base = base_path
-            dst_linked = False
-        except ValueError as e:
-            return web.json_response({"error": f"Invalid destination: {e}"}, status=400)
+    if not src_path:
+        return web.json_response({"error": f"Unknown source group: {src_group}"}, status=400)
+    if not dst_path:
+        return web.json_response({"error": f"Unknown destination group: {dst_group}"}, status=400)
 
-    src_path = os.path.join(src_group_path, image_name)
-    dst_dir = dst_group_path
-    dst_path = os.path.join(dst_dir, image_name)
+    src_file = os.path.join(src_path, image_name)
+    dst_file = os.path.join(dst_path, image_name)
 
-    # Validate paths
-    if not _validate_path_within_base(src_path, src_group_path):
+    if not _validate_path_within(src_file, src_path):
         return web.json_response({"error": "Invalid source path"}, status=400)
-
-    if not _validate_path_within_base(dst_path, dst_group_path):
+    if not _validate_path_within(dst_file, dst_path):
         return web.json_response({"error": "Invalid destination path"}, status=400)
 
-    if not os.path.exists(src_path):
+    if not os.path.exists(src_file):
         return web.json_response({"error": "Source image does not exist"}, status=404)
 
-    # Create destination group if needed (local only)
-    if not dst_linked:
-        os.makedirs(dst_dir, exist_ok=True)
-    elif not os.path.exists(dst_dir):
-        return web.json_response({"error": "Destination linked folder no longer exists"}, status=400)
-
-    # Handle name collision in destination
+    # Handle name collision
+    import shutil
     final_name = image_name
-    if os.path.exists(dst_path):
+    if os.path.exists(dst_file):
         split = os.path.splitext(image_name)
         i = 1
-        while os.path.exists(dst_path):
+        while os.path.exists(dst_file):
             final_name = f"{split[0]} ({i}){split[1]}"
-            dst_path = os.path.join(dst_dir, final_name)
+            dst_file = os.path.join(dst_path, final_name)
             i += 1
 
     try:
-        shutil.copy2(src_path, dst_path)
+        shutil.copy2(src_file, dst_file)
     except OSError as e:
         return web.json_response({"error": str(e)}, status=500)
 
@@ -430,63 +273,9 @@ async def copy_image_to_group(request):
     })
 
 
-@PromptServer.instance.routes.post("/bedrot/group/delete")
-async def delete_group(request):
-    """Delete a local group folder (must be empty or force=true). Does not delete linked folders."""
-    try:
-        data = await request.json()
-    except Exception:
-        return web.json_response({"error": "Invalid JSON"}, status=400)
-
-    name = data.get("name", "")
-    force = data.get("force", False)
-
-    # Prevent deleting linked folders (use unlink instead)
-    if is_linked_folder(name):
-        return web.json_response({
-            "error": "Cannot delete linked folders. Use the unlink endpoint to remove the link."
-        }, status=400)
-
-    try:
-        name = _sanitize_path(name)
-    except ValueError as e:
-        return web.json_response({"error": str(e)}, status=400)
-
-    # Prevent deleting the default Unsorted group
-    if name == DEFAULT_GROUP:
-        return web.json_response({"error": "Cannot delete the Unsorted group"}, status=400)
-
-    base_path = _get_base_path()
-    group_path = os.path.join(base_path, name)
-
-    if not _validate_path_within_base(group_path, base_path):
-        return web.json_response({"error": "Invalid group path"}, status=400)
-
-    if not os.path.exists(group_path):
-        return web.json_response({"error": "Group does not exist"}, status=404)
-
-    # Check if empty
-    contents = os.listdir(group_path)
-    if contents and not force:
-        return web.json_response({
-            "error": "Group is not empty. Use force=true to delete anyway.",
-            "count": len(contents)
-        }, status=400)
-
-    try:
-        if force:
-            shutil.rmtree(group_path)
-        else:
-            os.rmdir(group_path)
-    except OSError as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-    return web.json_response({"success": True, "name": name})
-
-
 @PromptServer.instance.routes.post("/bedrot/image/delete")
 async def delete_image(request):
-    """Delete an image from a group (local or linked)."""
+    """Delete an image from a group."""
     try:
         data = await request.json()
     except Exception:
@@ -495,26 +284,18 @@ async def delete_image(request):
     image_name = data.get("image", "")
     group = data.get("group", "")
 
-    # Sanitize image name
     try:
-        image_name = _sanitize_path(image_name)
+        image_name = _sanitize_filename(image_name)
     except ValueError as e:
         return web.json_response({"error": str(e)}, status=400)
 
-    # Resolve group
-    group_path, is_linked, validation_base = _resolve_group_path(group)
-    if group_path is None:
-        try:
-            sanitized = _sanitize_path(group)
-            base_path = _get_base_path()
-            group_path = os.path.join(base_path, sanitized)
-            validation_base = base_path
-        except ValueError as e:
-            return web.json_response({"error": str(e)}, status=400)
+    group_path = get_group_path(group)
+    if not group_path:
+        return web.json_response({"error": f"Unknown group: {group}"}, status=400)
 
     image_path = os.path.join(group_path, image_name)
 
-    if not _validate_path_within_base(image_path, group_path):
+    if not _validate_path_within(image_path, group_path):
         return web.json_response({"error": "Invalid image path"}, status=400)
 
     if not os.path.exists(image_path):
@@ -529,75 +310,8 @@ async def delete_image(request):
 
 
 # ============================================================================
-# Linked Folder Management Endpoints
+# Folder Picker & Image Viewer
 # ============================================================================
-
-@PromptServer.instance.routes.get("/bedrot/linked/list")
-async def list_linked_folders(request):
-    """List all linked folders with their paths and status."""
-    folders = load_linked_folders()
-
-    result = []
-    for folder in folders:
-        exists = os.path.isdir(folder["path"])
-        image_count = 0
-        if exists:
-            image_count = len(_get_image_files(folder["path"]))
-
-        result.append({
-            "name": folder["name"],
-            "path": folder["path"],
-            "exists": exists,
-            "count": image_count
-        })
-
-    return web.json_response(result)
-
-
-@PromptServer.instance.routes.post("/bedrot/linked/add")
-async def add_linked_folder_endpoint(request):
-    """Add a new linked external folder."""
-    try:
-        data = await request.json()
-    except Exception:
-        return web.json_response({"error": "Invalid JSON"}, status=400)
-
-    name = data.get("name", "").strip()
-    path = data.get("path", "").strip()
-
-    if not name:
-        return web.json_response({"error": "Name is required"}, status=400)
-    if not path:
-        return web.json_response({"error": "Path is required"}, status=400)
-
-    success, message = add_linked_folder(name, path)
-
-    if success:
-        return web.json_response({"success": True, "message": message})
-    else:
-        return web.json_response({"error": message}, status=400)
-
-
-@PromptServer.instance.routes.post("/bedrot/linked/remove")
-async def remove_linked_folder_endpoint(request):
-    """Remove a linked folder (does not delete actual files on disk)."""
-    try:
-        data = await request.json()
-    except Exception:
-        return web.json_response({"error": "Invalid JSON"}, status=400)
-
-    name = data.get("name", "").strip()
-
-    if not name:
-        return web.json_response({"error": "Name is required"}, status=400)
-
-    success, message = remove_linked_folder(name)
-
-    if success:
-        return web.json_response({"success": True, "message": message})
-    else:
-        return web.json_response({"error": message}, status=404)
-
 
 @PromptServer.instance.routes.post("/bedrot/browse/folder")
 async def browse_for_folder(request):
@@ -690,20 +404,6 @@ async def browse_for_folder(request):
             vtable = cast(file_dialog, POINTER(c_void_p))[0]
             vtable = cast(vtable, POINTER(c_void_p * 30))
 
-            # Define function types for COM methods
-            # IFileDialog vtable offsets:
-            # 0-2: IUnknown (QueryInterface, AddRef, Release)
-            # 3: Show
-            # 4: SetFileTypes
-            # 5: SetFileTypeIndex
-            # 6: GetFileTypeIndex
-            # 7: Advise
-            # 8: Unadvise
-            # 9: SetOptions
-            # 10: GetOptions
-            # ...
-            # 20: GetResult (for IFileOpenDialog)
-
             GetOptions = ctypes.WINFUNCTYPE(ctypes.c_long, c_void_p, POINTER(c_ulong))(vtable.contents[10])
             SetOptions = ctypes.WINFUNCTYPE(ctypes.c_long, c_void_p, c_ulong)(vtable.contents[9])
             Show = ctypes.WINFUNCTYPE(ctypes.c_long, c_void_p, c_void_p)(vtable.contents[3])
@@ -768,8 +468,8 @@ async def browse_for_folder(request):
     # Auto-name using folder name
     folder_name = os.path.basename(folder_path)
 
-    # Register as linked folder
-    success, message = add_linked_folder(folder_name, folder_path)
+    # Register as group
+    success, message = add_group(folder_name, folder_path)
 
     if success:
         return web.json_response({
@@ -782,8 +482,8 @@ async def browse_for_folder(request):
 
 
 @PromptServer.instance.routes.get("/bedrot/view")
-async def bedrot_view_image(request):
-    """Serve image from any group (local or linked) for preview."""
+async def view_image(request):
+    """Serve image from any group for preview."""
     import mimetypes
 
     group = request.query.get("group", DEFAULT_GROUP)
@@ -792,39 +492,25 @@ async def bedrot_view_image(request):
     if not filename or filename == "[no images]":
         return web.Response(status=400, text="No filename provided")
 
-    # Resolve group path (handles both local and linked)
-    group_path, is_linked, validation_base = _resolve_group_path(group)
+    group_path = get_group_path(group)
+    if not group_path:
+        return web.Response(status=400, text=f"Unknown group: {group}")
 
-    if group_path is None:
-        # Try as local group
-        try:
-            sanitized = _sanitize_path(group)
-            base_path = _get_base_path()
-            group_path = os.path.join(base_path, sanitized)
-            validation_base = base_path
-        except ValueError as e:
-            return web.Response(status=400, text=str(e))
-
-    # Sanitize filename
     try:
-        safe_filename = _sanitize_path(filename)
+        safe_filename = _sanitize_filename(filename)
     except ValueError as e:
         return web.Response(status=400, text=str(e))
 
-    # Build full path
     image_path = os.path.join(group_path, safe_filename)
 
-    # Security check - path must stay within group folder
-    if not _validate_path_within_base(image_path, group_path):
+    if not _validate_path_within(image_path, group_path):
         return web.Response(status=403, text="Access denied")
 
     if not os.path.exists(image_path):
         return web.Response(status=404, text="Image not found")
 
-    # Determine MIME type
     mime_type, _ = mimetypes.guess_type(image_path)
     if not mime_type:
         mime_type = "application/octet-stream"
 
-    # Serve the file
     return web.FileResponse(image_path, headers={"Content-Type": mime_type})

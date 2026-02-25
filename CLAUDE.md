@@ -4,17 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a ComfyUI custom nodes package that provides `BEDROT's Clip Text Encode` - a CLIP text encoder with conditional bracket preprocessing. The node extends standard CLIPTextEncode by adding a conditional bracket language for dynamic prompt control.
+This is a ComfyUI custom nodes package providing two nodes:
+- `BEDROT's Clip Text Encode` - CLIP text encoder with conditional bracket preprocessing
+- `BEDROT's Load Image` - LoadImage with group-based folder organization
 
 ## Architecture
 
 ```
 bedrot_custom_nodes/
   __init__.py                    # Root package - exports NODE_CLASS_MAPPINGS from submodules
+  web/
+    bedrot_loadimage.js          # Frontend extension for Load Image (drag-drop, preview, groups)
   bedrot_cliptextencoder/
     __init__.py                  # Subpackage - re-exports from nodes.py
     nodes.py                     # BedrotCLIPTextEncode node implementation
     bedrotcliptextencode.md      # Original specification document
+  bedrot_loadimage/
+    __init__.py                  # Subpackage - re-exports from nodes.py, registers routes
+    nodes.py                     # BedrotLoadImage node implementation
+    routes.py                    # API routes for group/image management
+    config.py                    # Unified group registry (groups.json)
+    groups.json                  # Persistent config: all groups as name->path entries
 ```
 
 **Node Registration Pattern**: ComfyUI discovers custom nodes via `NODE_CLASS_MAPPINGS` and `NODE_DISPLAY_NAME_MAPPINGS` dicts exported from `__init__.py`. New nodes follow this chain: `node_module.py` -> `subpackage/__init__.py` -> `bedrot_custom_nodes/__init__.py`.
@@ -41,6 +51,14 @@ Flags are global - a flag set anywhere in the prompt affects all conditional blo
 
 ## Key Implementation Details
 
+### BEDROT's Clip Text Encode
 - `BedrotCLIPTextEncode.encode()` calls `_preprocess_conditional_brackets()` before using CLIP's tokenizer
 - Processing order: extract flags -> remove flag tokens -> remove invalid negatives -> evaluate conditional blocks -> clean whitespace
 - The node directly uses CLIP's `tokenize()` and `encode_from_tokens_scheduled()` rather than instantiating CLIPTextEncode
+
+### BEDROT's Load Image
+- **Group system**: All groups are name->path entries in `groups.json`. A group is just a reference to any folder on the filesystem.
+- **No `image_upload` flag**: The image widget does NOT use `image_upload: True` to avoid conflicts with ComfyUI's built-in upload handler. Drag-drop is handled by the custom `onDragDrop` prototype handler in `bedrot_loadimage.js`.
+- **Upload flow**: Drag-drop -> `POST /bedrot/upload/image` -> file saved to group's folder -> image list refreshed -> preview updated
+- **Add Group**: Folder picker dialog -> registers folder path in `groups.json` via `POST /bedrot/browse/folder`
+- **Migration**: On first load, `config.py` migrates from old `linked_folders.json` format to unified `groups.json`

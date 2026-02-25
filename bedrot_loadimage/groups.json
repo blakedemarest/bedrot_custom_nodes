@@ -1,5 +1,9 @@
 {
-  "linked_folders": [
+  "groups": [
+    {
+      "name": "Unsorted",
+      "path": "E:\\PROGRAMS\\ComfyUI_windows_portable\\ComfyUI\\input\\BedRot_custom_image_load\\Unsorted"
+    },
     {
       "name": "controlnet",
       "path": "C:\\Users\\Earth\\CSU Fullerton Dropbox\\Blake Demarest\\favs\\controlnet"
@@ -15,6 +19,10 @@
     {
       "name": "on_top",
       "path": "E:\\PROGRAMS\\ComfyUI_windows_portable\\ComfyUI\\input\\on_top"
+    },
+    {
+      "name": "ass_focus",
+      "path": "E:\\PROGRAMS\\ComfyUI_windows_portable\\ComfyUI\\input\\ass_focus"
     }
   ]
 }
